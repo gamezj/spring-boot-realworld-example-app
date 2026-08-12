@@ -1,0 +1,38 @@
+# pr-title-lint.yml — the D5 traceability control (glue item 5, docs/01 §12).
+# Checks the PR TITLE ONLY for a leading Jira issue key. Deliberately checks
+# NOTHING about the branch name: vendor-fixed prefixes like copilot/* are accepted
+# as-is and must never be blocked (D5). Traceability of record = issue key in the
+# PR title + GitHub-for-Jira linking — not branch naming.
+# Copy to the adopter repo as .github/workflows/pr-title-lint.yml and make
+# "pr-title-lint" a required status check via ruleset.
+# PLACEHOLDERS: PROJECT_KEYS below (pipe-separated allowlist, or leave the generic
+# pattern to accept any KEY-123 style key).
+
+name: pr-title-lint
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review]
+
+permissions: {}
+
+jobs:
+  lint-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require leading issue key in PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          # Restrict to your program's project keys, e.g. "PDLC|PAY|CORE".
+          # Leave as ".*" is NOT allowed — an explicit key list keeps JQL/dev-panel
+          # linking honest. Generic fallback pattern: [A-Z][A-Z0-9]+
+          PROJECT_KEYS: 'PDLC'
+        run: |
+          # Title must start with "<KEY>-<number>: " (colon + space required).
+          if printf '%s' "$TITLE" | grep -Eq "^(${PROJECT_KEYS})-[0-9]+: .+"; then
+            echo "PR title carries a leading issue key."
+          else
+            echo "::error::PR title must start with the Jira issue key, e.g. \"PDLC-123: fix the thing\". Got: \"$TITLE\". Branch names (including copilot/*) are never checked — fix the TITLE."
+            exit 1
+          fi
