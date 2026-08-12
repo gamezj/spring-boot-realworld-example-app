@@ -1,0 +1,88 @@
+# sod-mirror.yml — the D4 MIRRORED segregation-of-duties status.
+# VISIBILITY ONLY: this check exposes the spine's SoD verdict on the PR so reviewers
+# can see it. It is admin-waivable and therefore explicitly NOT the control of
+# record — the spine refuses gate advancement when approver ≡ dispatcher/reporter
+# (via the governed Identity Map), and that refusal cannot be waived from GitHub
+# (docs/01 §8.3). If this check and the spine ever disagree, the spine wins.
+# Copy to the adopter repo as .github/workflows/sod-mirror.yml. The commit-status
+# context below MUST stay "agentic-pdlc/sod" — that is SOD_STATUS_CONTEXT in
+# @agentic-pdlc/github; optionally add it as a required check for reviewer
+# visibility (knowing it is defense in depth).
+# PLACEHOLDERS: vars.RELAY_BASE_URL, secrets.RELAY_SHARED_TOKEN.
+#
+# Contract: POST {RELAY}/sod/check with the x-pdlc-token shared secret and
+# {"workItemId", "approver": {"github": <login>}} — implemented by apps/relay
+# (createSodCheck). The relay resolves the recorded dispatcher for the item and
+# answers {"state": "success"|"failure"|"pending", "description": "..."} with FIXED
+# description strings (never user-controlled text).
+#
+# Injection hardening (D21): every value read from the event or the relay response
+# crosses into `run:` scripts via `env:` variables and quoted "$VAR" expansion —
+# NEVER via ${{ }} interpolation inside the script — so a malicious PR title,
+# display name, or response field cannot become shell.
+
+name: sod-mirror
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  statuses: write
+  pull-requests: read
+
+concurrency:
+  group: sod-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask the spine for the SoD verdict
+        id: verdict
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REVIEWER: ${{ github.event.review.user.login }}
+          RELAY_BASE_URL: ${{ vars.RELAY_BASE_URL }}
+          RELAY_SHARED_TOKEN: ${{ secrets.RELAY_SHARED_TOKEN }}
+        run: |
+          # Work item = leading issue key in the PR title (D5). No key -> pending.
+          key=$(printf '%s' "$PR_TITLE" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' || true)
+          if [ -z "$key" ]; then
+            echo "state=pending" >> "$GITHUB_OUTPUT"
+            echo "description=no issue key in the PR title (D5) — SoD verdict pending" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          body=$(jq -n --arg id "$key" --arg gh "$REVIEWER" \
+            '{workItemId: $id, approver: {github: $gh}}')
+          resp=$(curl --fail-with-body -sS -X POST "$RELAY_BASE_URL/sod/check" \
+            -H "x-pdlc-token: $RELAY_SHARED_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$body")
+          # jq -r validates the response is JSON; values land in $GITHUB_OUTPUT as
+          # single lines (tr strips any newline an unexpected response could smuggle).
+          state=$(printf '%s' "$resp" | jq -r '.state' | tr -d '\n')
+          description=$(printf '%s' "$resp" | jq -r '.description' | tr -d '\n')
+          case "$state" in
+            success|failure|pending) ;;
+            *) state="pending"; description="unrecognized relay verdict — treating as pending" ;;
+          esac
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "description=$description" >> "$GITHUB_OUTPUT"
+
+      - name: Post agentic-pdlc/sod commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STATE: ${{ steps.verdict.outputs.state }}
+          DESCRIPTION: ${{ steps.verdict.outputs.description }}
+        run: |
+          # state: "success" (independent approval) | "failure" (approver maps to
+          # dispatcher/reporter or is unresolvable) | "pending" (no dispatch yet).
+          gh api "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state="$STATE" \
+            -f context="agentic-pdlc/sod" \
+            -f description="$DESCRIPTION (mirror — spine is control of record, D4)"

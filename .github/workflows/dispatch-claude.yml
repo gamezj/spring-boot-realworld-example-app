@@ -1,0 +1,68 @@
+# dispatch-claude.yml — the program-default Claude dispatch path (D2):
+#   Jira Automation / spine  ->  POST /repos/{owner}/{repo}/dispatches
+#   (event_type "claude-dispatch")  ->  this workflow  ->  anthropics/claude-code-action@v1.
+# Copy to the adopter repo as .github/workflows/dispatch-claude.yml.
+# PLACEHOLDERS: secrets.ANTHROPIC_API_KEY (or OIDC federation inputs — see comments),
+#   nothing else. The client_payload is produced by the spine's dispatch adapter and
+#   NEVER contains callback URLs or tokens (D20) — completion flows back via
+#   workflow_run / PR events observed by the relay.
+#
+# ASSUMPTION (docs/research/claude-platform.md §3): claude-code-action@v1 is GA;
+# automation mode takes a `prompt` input and is deny-by-default on tools until
+# granted via claude_args. Re-verify input names against the action's README on install.
+
+name: dispatch-claude
+
+on:
+  repository_dispatch:
+    types: [claude-dispatch]
+
+# One live agent run per Jira issue per stage (docs/01 §7.3 serialization rule).
+concurrency:
+  group: claude-${{ github.event.client_payload.workItemId }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write # only needed for the OIDC / Bedrock-Vertex-Foundry auth variants
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code (automation mode)
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Auth option A (simplest): vaulted Console key.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Auth option B (no static secret): OIDC workload identity federation —
+          # replace the line above with:
+          #   anthropic_federation_rule_id: <RULE_ID>
+          # Auth option C (bank cloud): use_bedrock / use_vertex / use_foundry with
+          # cloud OIDC — the Action is the one Claude surface portable to those clouds.
+          prompt: |
+            Work item: ${{ github.event.client_payload.workItemId }}
+            Risk tier: ${{ github.event.client_payload.riskTier }} (autonomy ${{ github.event.client_payload.autonomy }})
+            Plan-first: ${{ github.event.client_payload.planFirst }}
+
+            ${{ github.event.client_payload.prompt }}
+
+            Follow AGENTS.md. Branch: agent/claude/${{ github.event.client_payload.workItemId }}-<slug>.
+            PR title MUST start with "${{ github.event.client_payload.workItemId }}: ".
+            Open the PR as a DRAFT with the full PR-template evidence sections.
+            If plan-first is true: produce the plan as your only output and STOP —
+            do not write code (the human "Plan Approved" transition dispatches execution, D8).
+          claude_args: |
+            --max-turns 50
+            --model claude-sonnet-4-5
+          # Deny-by-default stands; grant tools explicitly per repo policy, e.g.:
+          # settings: |
+          #   { "permissions": { "allow": ["Bash(npm test:*)", "Edit", "Write"] } }
