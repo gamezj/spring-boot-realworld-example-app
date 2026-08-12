@@ -63,6 +63,6 @@ jobs:
           claude_args: |
             --max-turns 50
             --model claude-sonnet-4-5
-          # Deny-by-default stands; grant tools explicitly per repo policy, e.g.:
-          # settings: |
-          #   { "permissions": { "allow": ["Bash(npm test:*)", "Edit", "Write"] } }
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(./gradlew:*),Bash(ls:*),Bash(mkdir:*)"
+          # Deny-by-default with an explicit grant: read/edit/write + git/gh (branch,
+          # commit, draft PR) + the repo's build tool. Tighten or extend per repo policy.
