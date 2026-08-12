@@ -18,6 +18,8 @@ permissions: {}
 
 jobs:
   lint-title:
+    # Check-run name MUST equal the required-check context in branch protection.
+    name: pr-title-lint
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
