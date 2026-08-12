@@ -24,6 +24,7 @@ permissions:
   contents: read
   pull-requests: write # comment only; the critic has no write tools on the repo
   issues: write
+  id-token: write # claude-code-action's token exchange requires OIDC
 
 jobs:
   critic:
