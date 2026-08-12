@@ -1,0 +1,71 @@
+# evidence-export.yml — the nightly evidence sweep (D3 cadence, backstop leg).
+# Per-stage appends happen synchronously in the spine; this job catches what the
+# boundary append could not fetch (vendor transcripts, late approval records) and
+# pushes bundles toward the bank-owned WORM store. Vendor-side retention is cache,
+# never archive (docs/01 §9).
+# Copy to the adopter repo (or a dedicated ops repo) as
+# .github/workflows/evidence-export.yml.
+# PLACEHOLDERS: vars.RELAY_BASE_URL, secrets.RELAY_SHARED_TOKEN — and pick ONE of
+# the two sweep steps (relay endpoint or CLI) per your deployment.
+#
+# Contract: POST {RELAY}/evidence/sweep with the x-pdlc-token shared secret —
+# implemented by apps/relay (createNightlySweep): seals bundles for items that
+# reached Done and answers {"sealed": [...], "skipped": [...]}. Option B uses the
+# CLI's `pdlc evidence sweep` subcommand against the same store.
+
+name: evidence-export
+
+on:
+  schedule:
+    - cron: '17 2 * * *' # nightly, off the top of the hour to dodge load spikes
+  workflow_dispatch: {} # manual re-run for missed nights / audits
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evidence-export
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Option A — the relay owns the sweep (default): one authenticated POST; the
+      # relay/spine pulls vendor transcripts (Anthropic Compliance API, Cursor audit
+      # streaming, GitHub agent session logs), approval records (Jira/JSM JQL export),
+      # appends to open bundles, and seals bundles for items that reached Done.
+      - name: Trigger nightly sweep on the relay
+        env:
+          RELAY_BASE_URL: ${{ vars.RELAY_BASE_URL }}
+          RELAY_SHARED_TOKEN: ${{ secrets.RELAY_SHARED_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          curl --fail-with-body -sS -X POST \
+            "$RELAY_BASE_URL/evidence/sweep" \
+            -H "x-pdlc-token: $RELAY_SHARED_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"trigger\":\"nightly\",\"runId\":\"$RUN_ID\"}"
+
+      # Option B — CLI-driven sweep (delete Option A if used): run the program CLI
+      # against the evidence store root. Requires the adopter to vendor or install
+      # the kit workspace and mount/sync the store. `--seal` is safe here ONLY when
+      # this store holds closed items (a seal is immutable, D3); without it the
+      # command lists the unsealed work list for the export job.
+      # - name: Checkout program tooling
+      #   uses: actions/checkout@v4
+      #   with:
+      #     repository: {{ORG}}/agentic-pdlc
+      # - name: Run evidence sweep via CLI
+      #   run: |
+      #     npm ci
+      #     npx tsx apps/cli/src/main.ts evidence sweep --root ./evidence
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          # Never let a silent miss break the D3 cadence: page the program channel.
+          curl -sS -X POST "${{ secrets.SLACK_OPS_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{"text":"evidence-export FAILED (run ${{ github.run_id }}) — the nightly D3 sweep did not complete; investigate before the next close."}'
