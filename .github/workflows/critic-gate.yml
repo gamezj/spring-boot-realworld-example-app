@@ -27,6 +27,8 @@ permissions:
 
 jobs:
   critic:
+    # Check-run name MUST equal the required-check context in branch protection.
+    name: critic-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Run on agent-authored PRs; humans get the normal review path. Extend the list
