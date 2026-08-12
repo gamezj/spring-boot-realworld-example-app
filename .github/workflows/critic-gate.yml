@@ -1,0 +1,94 @@
+# critic-gate.yml — the adversarial second-agent review gate (maker-checker,
+# docs/03 §6.3; glue item 4 in the D7 inventory). A critic agent with FRESH context
+# and a DIFFERENT model than the builder reviews the diff before any human does.
+# Make "critic-gate" a required status check via ruleset: a PR cannot flip to
+# ready-for-review / merge without ADVERSARIAL-REVIEW: PASS.
+# Copy to the adopter repo as .github/workflows/critic-gate.yml.
+# PLACEHOLDERS: secrets.ANTHROPIC_API_KEY. Vendor swap notes at the bottom.
+#
+# ASSUMPTION (docs/research/claude-platform.md §3): automation-mode run posts its
+# result to the workflow log; this job also asserts the marker comment on the PR.
+# Verify the action's comment-posting behavior at install and adjust the assert step.
+
+name: critic-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: critic-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # comment only; the critic has no write tools on the repo
+  issues: write
+
+jobs:
+  critic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Run on agent-authored PRs; humans get the normal review path. Extend the list
+    # with the adopter's bot identities.
+    if: >
+      github.event.pull_request.user.login == 'copilot-swe-agent[bot]' ||
+      startsWith(github.event.pull_request.head.ref, 'copilot/') ||
+      startsWith(github.event.pull_request.head.ref, 'agent/')
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Adversarial review (different model than the builder)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Builder runs Sonnet (dispatch-claude.yml); the critic pins Opus —
+          # different model family/context breaks same-model blind spots.
+          prompt: |
+            /critic ${{ github.event.pull_request.number }}
+            Review PR #${{ github.event.pull_request.number }} ("${{ github.event.pull_request.title }}")
+            as the adversarial critic per .claude/commands/critic.md. You have NO write
+            tools: findings as PR review comments only, ending with exactly one line
+            "ADVERSARIAL-REVIEW: PASS" or "ADVERSARIAL-REVIEW: FAIL — <reasons>".
+          claude_args: |
+            --max-turns 30
+            --model claude-opus-4-6
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr review:*)"
+
+      - name: Assert verdict marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          # The ONLY author whose markers count. The critic posts via `gh pr
+          # comment/review` under the workflow token, i.e. github-actions. Change
+          # this if your critic runs under a dedicated bot identity. Without the
+          # author filter the PR AUTHOR could comment "ADVERSARIAL-REVIEW: PASS"
+          # and self-approve the gate.
+          CRITIC_LOGIN: 'github-actions'
+        run: |
+          # The chronologically LATEST marker AUTHORED BY THE CRITIC decides the
+          # check. Comments and reviews are merged and sorted by timestamp —
+          # `.comments + .reviews` alone is NOT chronological (all comments would
+          # precede all reviews), so `last` without sorting lies.
+          verdict=$(gh pr view "$PR" --json comments,reviews \
+            --jq '([.comments[] | {author: .author.login, body, at: .createdAt}]
+                   + [.reviews[] | {author: .author.login, body, at: .submittedAt}])
+                  | map(select((.author == env.CRITIC_LOGIN) and (.body | test("ADVERSARIAL-REVIEW:"))))
+                  | sort_by(.at) | (last.body // "")')
+          echo "$verdict"
+          case "$verdict" in
+            *"ADVERSARIAL-REVIEW: PASS"*) exit 0 ;;
+            *) echo "::error::No ADVERSARIAL-REVIEW: PASS marker from $CRITIC_LOGIN — PR stays in draft. A hard reject after the builder's iteration budget counts as a failed attempt (D14)."; exit 1 ;;
+          esac
+
+# Vendor swap (docs/03 §6.3):
+# - Copilot shop [Baseline]: delete the claude steps; enable the repository ruleset
+#   "Automatically request Copilot code review" (review-new-pushes ON) and assert its
+#   review state here instead.
+# - Cursor shop [Baseline]: Bugbot on the PR; assert its verdict.
+# - Cross-vendor hardening (regulated): run a DIFFERENT vendor's reviewer than the
+#   builder (e.g., Copilot code review on Claude-authored PRs).
