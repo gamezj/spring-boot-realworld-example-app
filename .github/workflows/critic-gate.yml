@@ -66,12 +66,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
-          # The ONLY author whose markers count. The critic posts via `gh pr
-          # comment/review` under the workflow token, i.e. github-actions. Change
-          # this if your critic runs under a dedicated bot identity. Without the
-          # author filter the PR AUTHOR could comment "ADVERSARIAL-REVIEW: PASS"
-          # and self-approve the gate.
-          CRITIC_LOGIN: 'github-actions'
+          # The ONLY author whose markers count. claude-code-action v1 posts under
+          # its own "claude" GitHub App identity (verified live), NOT github-actions.
+          # CAVEAT: the builder run posts under the SAME app identity — a builder
+          # that emitted a verdict marker could self-pass this gate. Mitigations:
+          # the builder prompt never asks for markers (D21 treats embedded
+          # instructions as data), and regulated adopters should run the critic
+          # under a DEDICATED bot identity and pin it here.
+          CRITIC_LOGIN: 'claude'
         run: |
           # The chronologically LATEST marker AUTHORED BY THE CRITIC decides the
           # check. Comments and reviews are merged and sorted by timestamp —
