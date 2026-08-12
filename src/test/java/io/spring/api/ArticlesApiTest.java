@@ -95,7 +95,7 @@ public class ArticlesApiTest extends TestWithCurrentUser {
   }
 
   @Test
-  public void should_get_error_message_with_wrong_parameter() throws Exception {
+  public void should_get_error_message_with_empty_body() throws Exception {
     String title = "How to train your dragon";
     String description = "Ever wonder how?";
     String body = "";
@@ -108,9 +108,86 @@ public class ArticlesApiTest extends TestWithCurrentUser {
         .body(param)
         .when()
         .post("/articles")
-        .prettyPeek()
         .then()
         .statusCode(422)
+        .body("errors.body[0]", equalTo("can't be empty"));
+  }
+
+  @Test
+  public void should_get_error_message_with_empty_title() throws Exception {
+    String title = "";
+    String description = "Ever wonder how?";
+    String body = "You have to believe";
+    String[] tagList = {"reactjs", "angularjs", "dragons"};
+    Map<String, Object> param = prepareParam(title, description, body, asList(tagList));
+
+    given()
+        .contentType("application/json")
+        .header("Authorization", "Token " + token)
+        .body(param)
+        .when()
+        .post("/articles")
+        .then()
+        .statusCode(422)
+        .body("errors.title[0]", equalTo("can't be empty"));
+  }
+
+  @Test
+  public void should_get_error_message_with_empty_description() throws Exception {
+    String title = "How to train your dragon";
+    String description = "";
+    String body = "You have to believe";
+    String[] tagList = {"reactjs", "angularjs", "dragons"};
+    Map<String, Object> param = prepareParam(title, description, body, asList(tagList));
+
+    given()
+        .contentType("application/json")
+        .header("Authorization", "Token " + token)
+        .body(param)
+        .when()
+        .post("/articles")
+        .then()
+        .statusCode(422)
+        .body("errors.description[0]", equalTo("can't be empty"));
+  }
+
+  @Test
+  public void should_get_error_message_with_whitespace_only_title() throws Exception {
+    String title = "   ";
+    String description = "Ever wonder how?";
+    String body = "You have to believe";
+    String[] tagList = {"reactjs", "angularjs", "dragons"};
+    Map<String, Object> param = prepareParam(title, description, body, asList(tagList));
+
+    given()
+        .contentType("application/json")
+        .header("Authorization", "Token " + token)
+        .body(param)
+        .when()
+        .post("/articles")
+        .then()
+        .statusCode(422)
+        .body("errors.title[0]", equalTo("can't be empty"));
+  }
+
+  @Test
+  public void should_get_error_message_with_multiple_empty_fields() throws Exception {
+    String title = "";
+    String description = "";
+    String body = "";
+    String[] tagList = {"reactjs", "angularjs", "dragons"};
+    Map<String, Object> param = prepareParam(title, description, body, asList(tagList));
+
+    given()
+        .contentType("application/json")
+        .header("Authorization", "Token " + token)
+        .body(param)
+        .when()
+        .post("/articles")
+        .then()
+        .statusCode(422)
+        .body("errors.title[0]", equalTo("can't be empty"))
+        .body("errors.description[0]", equalTo("can't be empty"))
         .body("errors.body[0]", equalTo("can't be empty"));
   }
 
