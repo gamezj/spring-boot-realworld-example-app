@@ -42,16 +42,83 @@ The secret key is stored in `application.properties`.
 
 It uses a ~~H2 in-memory database~~ sqlite database (for easy local test without losing test data after every restart), can be changed easily in the `application.properties` for any other database.
 
+# API Endpoints
+
+The application provides a complete REST API following the [RealWorld API spec](https://github.com/gothinkster/realworld/tree/master/api). All endpoints are accessible at `http://localhost:8080` (not `/api`).
+
+## Authentication
+
+Authentication is handled via JWT tokens. Include the token in the `Authorization` header:
+```
+Authorization: Token {jwt-token}
+```
+
+## User & Authentication
+
+- `POST /users` - Register a new user
+- `POST /users/login` - Login existing user
+- `GET /user` - Get current user (requires auth)
+- `PUT /user` - Update current user (requires auth)
+
+## Profiles
+
+- `GET /profiles/:username` - Get user profile
+- `POST /profiles/:username/follow` - Follow a user (requires auth)
+- `DELETE /profiles/:username/follow` - Unfollow a user (requires auth)
+
+## Articles
+
+- `GET /articles` - List articles (supports query params: `tag`, `author`, `favorited`, `limit`, `offset`)
+- `GET /articles/feed` - Get user's article feed (requires auth)
+- `POST /articles` - Create article (requires auth)
+- `GET /articles/:slug` - Get article by slug
+- `PUT /articles/:slug` - Update article (requires auth)
+- `DELETE /articles/:slug` - Delete article (requires auth)
+
+## Favorites
+
+- `POST /articles/:slug/favorite` - Favorite an article (requires auth)
+- `DELETE /articles/:slug/favorite` - Unfavorite an article (requires auth)
+
+## Comments
+
+- `GET /articles/:slug/comments` - Get comments for article
+- `POST /articles/:slug/comments` - Add comment to article (requires auth)
+- `DELETE /articles/:slug/comments/:id` - Delete comment (requires auth)
+
+## Tags
+
+- `GET /tags` - Get all tags
+
 # Getting started
 
-You'll need Java 11 installed.
+## Prerequisites
+
+- Java 11 or higher
+- Gradle (wrapper included)
+
+## Running locally
+
+Start the application:
 
     ./gradlew bootRun
 
-To test that it works, open a browser tab at http://localhost:8080/tags .  
-Alternatively, you can run
+The server will start on port 8080. To verify it's working:
 
     curl http://localhost:8080/tags
+
+Or open http://localhost:8080/tags in your browser.
+
+## Configuration
+
+The application uses SQLite for local development. Configuration is in `src/main/resources/application.properties`:
+
+- **Database**: `dev.db` (SQLite file created automatically)
+- **JWT Secret**: Configured for development (change for production)
+- **JWT Session Time**: 86400 seconds (24 hours)
+- **Server Port**: 8080 (default)
+
+No additional database setup is required - the SQLite database is created automatically on first run.
 
 # Try it out with [Docker](https://www.docker.com/)
 
