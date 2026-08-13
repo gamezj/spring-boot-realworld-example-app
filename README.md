@@ -94,7 +94,7 @@ Authorization: Token {jwt-token}
 
 ## Prerequisites
 
-- Java 11 or higher
+- Java 11 (the pinned Gradle 7.4 wrapper does not support newer JDKs)
 - Gradle (wrapper included)
 
 ## Running locally
