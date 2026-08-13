@@ -44,7 +44,9 @@ It uses a ~~H2 in-memory database~~ sqlite database (for easy local test without
 
 # API Endpoints
 
-The application provides a complete REST API following the [RealWorld API spec](https://github.com/gothinkster/realworld/tree/master/api). All endpoints are accessible at `http://localhost:8080` (not `/api`).
+The application provides a REST API following the [RealWorld API spec](https://github.com/gothinkster/realworld/tree/master/api). All endpoints are accessible at `http://localhost:8080` (not `/api`).
+
+In addition to REST, the application exposes a GraphQL API (Netflix DGS): `POST /graphql` (queries/mutations, unauthenticated access permitted) and `GET /graphiql` (interactive playground).
 
 ## Authentication
 
@@ -94,7 +96,7 @@ Authorization: Token {jwt-token}
 
 ## Prerequisites
 
-- Java 11 (the pinned Gradle 7.4 wrapper does not support newer JDKs)
+- Java 11–17 (the pinned Gradle 7.4 wrapper supports JDK up to 17)
 - Gradle (wrapper included)
 
 ## Running locally
