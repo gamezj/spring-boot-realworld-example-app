@@ -46,7 +46,7 @@ It uses a ~~H2 in-memory database~~ sqlite database (for easy local test without
 
 The application provides a REST API following the [RealWorld API spec](https://github.com/gothinkster/realworld/tree/master/api). All endpoints are accessible at `http://localhost:8080` (not `/api`).
 
-In addition to REST, the application exposes a GraphQL API (Netflix DGS): `POST /graphql` (queries/mutations, unauthenticated access permitted) and `GET /graphiql` (interactive playground).
+In addition to REST, the application exposes a GraphQL API (Netflix DGS): `POST /graphql` (the endpoint is publicly reachable; read queries work unauthenticated, while article/comment/follow mutations require a JWT) and `GET /graphiql` (interactive playground).
 
 ## Authentication
 
