@@ -64,7 +64,9 @@ jobs:
       - name: Adversarial review (different model than the builder)
         uses: anthropics/claude-code-action@v1
         with:
+          # Either credential works; subscription token = near-zero marginal cost.
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Agent-authored PRs are opened by the claude app (a Bot actor); the action
           # refuses bot triggers unless allowed. Scoped to that one bot — never '*'.
           allowed_bots: 'claude'
