@@ -38,6 +38,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A missing/placeholder ANTHROPIC_API_KEY otherwise burns a 60-minute run AND a
+      # D14 attempt tick before anyone sees an error — fail in seconds instead. If you
+      # switched the Claude step to OIDC / Bedrock / Vertex / Foundry auth, delete this
+      # guard or adapt it to the auth input you use.
+      - name: Preflight — fail fast when Claude auth is missing
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::No Claude credential: set ANTHROPIC_API_KEY (API billing) or CLAUDE_CODE_OAUTH_TOKEN (subscription billing via 'claude setup-token'), or switch to an OIDC variant. Failing fast so this costs seconds, not a 60-minute run plus an attempt tick."
+            exit 1
+          fi
+          case "$ANTHROPIC_API_KEY" in
+            change-me*) echo "::error::ANTHROPIC_API_KEY is still the 'change-me' placeholder — set a real key."; exit 1 ;;
+          esac
+
       - name: Run Claude Code (automation mode)
         uses: anthropics/claude-code-action@v1
         with:
@@ -48,6 +65,12 @@ jobs:
           #   anthropic_federation_rule_id: <RULE_ID>
           # Auth option C (bank cloud): use_bedrock / use_vertex / use_foundry with
           # cloud OIDC — the Action is the one Claude surface portable to those clouds.
+          #
+          # The agent/claude/ branch prefix in the prompt below is the relay's
+          # completion-correlation contract (CLAUDE_BRANCH_PREFIX in apps/cli
+          # templates.ts; the relay reads env PDLC_CLAUDE_BRANCH_PREFIX with the same
+          # default). Pinned by packages/dispatch/test/kit-contract.test.ts — change
+          # all sides together.
           prompt: |
             Work item: ${{ github.event.client_payload.workItemId }}
             Risk tier: ${{ github.event.client_payload.riskTier }} (autonomy ${{ github.event.client_payload.autonomy }})
@@ -63,6 +86,11 @@ jobs:
           claude_args: |
             --max-turns 50
             --model claude-sonnet-4-5
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(./gradlew:*),Bash(ls:*),Bash(mkdir:*)"
-          # Deny-by-default with an explicit grant: read/edit/write + git/gh (branch,
-          # commit, draft PR) + the repo's build tool. Tighten or extend per repo policy.
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(ls:*),Bash(mkdir:*)"
+          # Deny-by-default with an explicit grant (the generic preset from `pdlc init
+          # --stack`; stack presets add the repo's build tool). The builder gets `gh`
+          # ONLY to open/inspect its own PR — NEVER grant `Bash(gh:*)`, `gh pr comment`,
+          # or `gh pr review`: those are the critic gate's verdict channel
+          # (ADVERSARIAL-REVIEW markers), and builder + critic share the `claude` app
+          # login by default, so a prompt-injected builder holding them could
+          # self-approve the gate. Pinned by packages/dispatch/test/kit-contract.test.ts.
