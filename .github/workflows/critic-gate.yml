@@ -45,10 +45,29 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      # A missing/placeholder ANTHROPIC_API_KEY otherwise burns up to 30 minutes and
+      # leaves the required check red with no clear cause — fail in seconds instead.
+      # If you switched the Claude step to OIDC / cloud auth, delete this guard or
+      # adapt it to the auth input you use.
+      - name: Preflight — fail fast when Claude auth is missing
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY repo secret is empty or unset and no OIDC auth is configured — set the secret (gh secret set ANTHROPIC_API_KEY) or switch the Claude step to an OIDC variant."
+            exit 1
+          fi
+          case "$ANTHROPIC_API_KEY" in
+            change-me*) echo "::error::ANTHROPIC_API_KEY is still the 'change-me' placeholder — set a real key."; exit 1 ;;
+          esac
+
       - name: Adversarial review (different model than the builder)
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Agent-authored PRs are opened by the claude app (a Bot actor); the action
+          # refuses bot triggers unless allowed. Scoped to that one bot — never '*'.
+          allowed_bots: 'claude'
           # Builder runs Sonnet (dispatch-claude.yml); the critic pins Opus —
           # different model family/context breaks same-model blind spots.
           prompt: |
@@ -68,11 +87,14 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           # The ONLY author whose markers count. claude-code-action v1 posts under
           # its own "claude" GitHub App identity (verified live), NOT github-actions.
-          # CAVEAT: the builder run posts under the SAME app identity — a builder
-          # that emitted a verdict marker could self-pass this gate. Mitigations:
-          # the builder prompt never asks for markers (D21 treats embedded
-          # instructions as data), and regulated adopters should run the critic
-          # under a DEDICATED bot identity and pin it here.
+          # RECOMMENDED posture: run the critic under a DEDICATED bot identity
+          # (separate claude-code-action app install / API key) and pin CRITIC_LOGIN
+          # to that login — then a builder-authored marker can never satisfy this
+          # gate. With the shared 'claude' default, builder and critic post as the
+          # same login; the residual defenses are that the builder prompt never asks
+          # for markers (D21 treats embedded instructions as data) and that
+          # dispatch-claude's tool grant deliberately excludes `gh pr comment` /
+          # `gh pr review` / `Bash(gh:*)` — do not widen that grant.
           CRITIC_LOGIN: 'claude'
         run: |
           # The chronologically LATEST marker AUTHORED BY THE CRITIC decides the
